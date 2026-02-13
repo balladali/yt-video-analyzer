@@ -58,6 +58,7 @@ docker run --rm -p 8000:8000 \
 - `YTDLP_COOKIES_PATH` — путь к cookies внутри контейнера (например `/app/cookies.txt`)
 - `YTDLP_MANUAL_MODE=true` — запускать yt-dlp в режиме, максимально близком к ручной команде
 - `YTDLP_DEBUG=true` — добавлять debug-поле с хвостом ошибки yt-dlp в ответ API
+- `LOG_LEVEL=INFO|DEBUG` — уровень логирования сервиса
 
 Примечание: сервис копирует cookies во временный writable файл перед запуском `yt-dlp`, поэтому безопасный read-only mount (`:ro`) поддерживается.
 
