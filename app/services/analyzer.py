@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import subprocess
@@ -6,6 +7,8 @@ from pathlib import Path
 from typing import Dict, List
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 
 def _run(cmd: List[str], cwd: str | None = None) -> str:
@@ -43,6 +46,16 @@ def _extract_subtitles(url: str, langs: str, workdir: str) -> tuple[str | None, 
         if files:
             return files[0].read_text(encoding="utf-8", errors="ignore"), stderr
     return None, stderr
+
+
+def _runtime_debug_info() -> Dict:
+    cookies_path = os.getenv("YTDLP_COOKIES_PATH", "").strip()
+    manual_mode = os.getenv("YTDLP_MANUAL_MODE", "false").lower() in {"1", "true", "yes", "on"}
+    return {
+        "cookies_configured": bool(cookies_path),
+        "cookies_file_exists": bool(cookies_path and Path(cookies_path).exists()),
+        "manual_mode": manual_mode,
+    }
 
 
 def _clean_vtt(text: str) -> str:
@@ -115,7 +128,13 @@ def _summarize_with_llm(text: str) -> Dict:
 
 def analyze_video(url: str, langs: str = "ru,en") -> Dict:
     debug_mode = os.getenv("YTDLP_DEBUG", "false").lower() in {"1", "true", "yes", "on"}
+    runtime_debug = _runtime_debug_info()
+
     with tempfile.TemporaryDirectory(prefix="ytva-") as td:
+        cmd_preview = _build_subtitles_cmd(url, langs)
+        if debug_mode:
+            logger.info("yt-dlp analyze start: url=%s, manual_mode=%s, cookies_configured=%s, cookies_file_exists=%s", url, runtime_debug["manual_mode"], runtime_debug["cookies_configured"], runtime_debug["cookies_file_exists"])
+
         try:
             raw_subs, stderr = _extract_subtitles(url, langs, td)
         except Exception as e:
@@ -123,6 +142,8 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
             status = "extract_error"
             if "Sign in to confirm you’re not a bot" in msg or "Sign in to confirm you're not a bot" in msg:
                 status = "blocked_by_youtube"
+
+            logger.exception("yt-dlp subtitle extraction failed for url=%s", url)
 
             out = {
                 "url": url,
@@ -132,6 +153,10 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                 "transcript": "",
             }
             if debug_mode:
+                out["debug_info"] = {
+                    **runtime_debug,
+                    "yt_dlp_command": cmd_preview,
+                }
                 out["debug"] = msg[-3000:]
             return out
 
@@ -143,8 +168,13 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                 "key_points": [],
                 "transcript": "",
             }
-            if debug_mode and stderr:
-                out["debug"] = stderr[-3000:]
+            if debug_mode:
+                out["debug_info"] = {
+                    **runtime_debug,
+                    "yt_dlp_command": cmd_preview,
+                }
+                if stderr:
+                    out["debug"] = stderr[-3000:]
             return out
 
         transcript = _clean_vtt(raw_subs)
@@ -157,6 +187,11 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
             "key_points": llm.get("key_points", []),
             "transcript": transcript,
         }
-        if debug_mode and stderr:
-            out["debug"] = stderr[-1000:]
+        if debug_mode:
+            out["debug_info"] = {
+                **runtime_debug,
+                "yt_dlp_command": cmd_preview,
+            }
+            if stderr:
+                out["debug"] = stderr[-1000:]
         return out
