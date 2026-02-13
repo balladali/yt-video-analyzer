@@ -45,8 +45,14 @@ uvicorn app.main:app --reload --port 8000
 ## Docker
 ```bash
 docker build -t yt-video-analyzer .
-docker run --rm -p 8000:8000 -e OPENROUTER_API_KEY=... yt-video-analyzer
+docker run --rm -p 8000:8000 \
+  -e OPENROUTER_API_KEY=... \
+  -e YTDLP_COOKIES_PATH=/app/cookies.txt \
+  -v /opt/masha/cookies/youtube-cookies.txt:/app/cookies.txt:ro \
+  yt-video-analyzer
 ```
+
+Где хранить cookies: лучше на хосте (например `/opt/masha/cookies/youtube-cookies.txt`) и монтировать в контейнер только для чтения.
 
 ## Ограничения MVP
 - Whisper fallback пока не реализован (сделан интерфейс и статус `no_subtitles`)

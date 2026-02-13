@@ -14,7 +14,7 @@ def _run(cmd: List[str], cwd: str | None = None) -> None:
         raise RuntimeError(f"Command failed: {' '.join(cmd)}\n{p.stderr}")
 
 
-def _extract_subtitles(url: str, langs: str, workdir: str) -> str | None:
+def _build_subtitles_cmd(url: str, langs: str) -> List[str]:
     lang_list = langs.replace(" ", "")
     cmd = [
         "yt-dlp",
@@ -23,10 +23,22 @@ def _extract_subtitles(url: str, langs: str, workdir: str) -> str | None:
         "--sub-langs",
         lang_list,
         "--skip-download",
+    ]
+
+    cookies_path = os.getenv("YTDLP_COOKIES_PATH", "").strip()
+    if cookies_path:
+        cmd.extend(["--cookies", cookies_path])
+
+    cmd.extend([
         "-o",
         "%(id)s.%(ext)s",
         url,
-    ]
+    ])
+    return cmd
+
+
+def _extract_subtitles(url: str, langs: str, workdir: str) -> str | None:
+    cmd = _build_subtitles_cmd(url, langs)
     _run(cmd, cwd=workdir)
 
     for ext in ("*.vtt", "*.srt"):
