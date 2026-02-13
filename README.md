@@ -54,6 +54,11 @@ docker run --rm -p 8000:8000 \
 
 Где хранить cookies: лучше на хосте (например `/opt/masha/cookies/youtube-cookies.txt`) и монтировать в контейнер только для чтения.
 
+Полезные env-переменные:
+- `YTDLP_COOKIES_PATH` — путь к cookies внутри контейнера (например `/app/cookies.txt`)
+- `YTDLP_MANUAL_MODE=true` — запускать yt-dlp в режиме, максимально близком к ручной команде
+- `YTDLP_DEBUG=true` — добавлять debug-поле с хвостом ошибки yt-dlp в ответ API
+
 ## Ограничения MVP
 - Whisper fallback пока не реализован (сделан интерфейс и статус `no_subtitles`)
 - Нет очереди задач и rate limit

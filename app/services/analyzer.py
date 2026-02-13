@@ -8,44 +8,41 @@ from typing import Dict, List
 import requests
 
 
-def _run(cmd: List[str], cwd: str | None = None) -> None:
+def _run(cmd: List[str], cwd: str | None = None) -> str:
     p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     if p.returncode != 0:
         raise RuntimeError(f"Command failed: {' '.join(cmd)}\n{p.stderr}")
+    return p.stderr or ""
 
 
 def _build_subtitles_cmd(url: str, langs: str) -> List[str]:
     lang_list = langs.replace(" ", "")
-    cmd = [
-        "yt-dlp",
-        "--write-auto-subs",
-        "--write-subs",
-        "--sub-langs",
-        lang_list,
-        "--skip-download",
-    ]
+    manual_mode = os.getenv("YTDLP_MANUAL_MODE", "false").lower() in {"1", "true", "yes", "on"}
+
+    cmd = ["yt-dlp", "--write-auto-subs", "--sub-langs", lang_list, "--skip-download"]
+
+    # Default mode tries both regular and auto subtitles.
+    # Manual mode mimics the successful host command as close as possible.
+    if not manual_mode:
+        cmd.insert(2, "--write-subs")
 
     cookies_path = os.getenv("YTDLP_COOKIES_PATH", "").strip()
     if cookies_path:
         cmd.extend(["--cookies", cookies_path])
 
-    cmd.extend([
-        "-o",
-        "%(id)s.%(ext)s",
-        url,
-    ])
+    cmd.extend(["-o", "%(id)s.%(ext)s", url])
     return cmd
 
 
-def _extract_subtitles(url: str, langs: str, workdir: str) -> str | None:
+def _extract_subtitles(url: str, langs: str, workdir: str) -> tuple[str | None, str]:
     cmd = _build_subtitles_cmd(url, langs)
-    _run(cmd, cwd=workdir)
+    stderr = _run(cmd, cwd=workdir)
 
     for ext in ("*.vtt", "*.srt"):
         files = list(Path(workdir).glob(ext))
         if files:
-            return files[0].read_text(encoding="utf-8", errors="ignore")
-    return None
+            return files[0].read_text(encoding="utf-8", errors="ignore"), stderr
+    return None, stderr
 
 
 def _clean_vtt(text: str) -> str:
@@ -117,25 +114,49 @@ def _summarize_with_llm(text: str) -> Dict:
 
 
 def analyze_video(url: str, langs: str = "ru,en") -> Dict:
+    debug_mode = os.getenv("YTDLP_DEBUG", "false").lower() in {"1", "true", "yes", "on"}
     with tempfile.TemporaryDirectory(prefix="ytva-") as td:
-        raw_subs = _extract_subtitles(url, langs, td)
+        try:
+            raw_subs, stderr = _extract_subtitles(url, langs, td)
+        except Exception as e:
+            msg = str(e)
+            status = "extract_error"
+            if "Sign in to confirm you’re not a bot" in msg or "Sign in to confirm you're not a bot" in msg:
+                status = "blocked_by_youtube"
+
+            out = {
+                "url": url,
+                "status": status,
+                "summary": "Не удалось получить субтитры с YouTube.",
+                "key_points": [],
+                "transcript": "",
+            }
+            if debug_mode:
+                out["debug"] = msg[-3000:]
+            return out
 
         if not raw_subs:
-            return {
+            out = {
                 "url": url,
                 "status": "no_subtitles",
                 "summary": "Субтитры не найдены. Нужен fallback через Whisper (ещё не реализован).",
                 "key_points": [],
                 "transcript": "",
             }
+            if debug_mode and stderr:
+                out["debug"] = stderr[-3000:]
+            return out
 
         transcript = _clean_vtt(raw_subs)
         llm = _summarize_with_llm(transcript)
 
-        return {
+        out = {
             "url": url,
             "status": "ok",
             "summary": llm.get("summary", ""),
             "key_points": llm.get("key_points", []),
             "transcript": transcript,
         }
+        if debug_mode and stderr:
+            out["debug"] = stderr[-1000:]
+        return out
