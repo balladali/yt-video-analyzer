@@ -7,15 +7,16 @@ def test_build_subtitles_cmd_without_cookies(monkeypatch):
     cmd = _build_subtitles_cmd("https://youtu.be/abc", "ru,en")
     assert "--cookies" not in cmd
     assert "--write-subs" in cmd
+    assert "--js-runtimes" in cmd
+    assert "--ignore-no-formats-error" in cmd
 
 
 def test_build_subtitles_cmd_with_cookies(monkeypatch):
-    monkeypatch.setenv("YTDLP_COOKIES_PATH", "/app/cookies.txt")
     monkeypatch.delenv("YTDLP_MANUAL_MODE", raising=False)
-    cmd = _build_subtitles_cmd("https://youtu.be/abc", "ru,en")
+    cmd = _build_subtitles_cmd("https://youtu.be/abc", "ru,en", cookies_arg_path="/tmp/cookies.txt")
     assert "--cookies" in cmd
     idx = cmd.index("--cookies")
-    assert cmd[idx + 1] == "/app/cookies.txt"
+    assert cmd[idx + 1] == "/tmp/cookies.txt"
 
 
 def test_build_subtitles_cmd_manual_mode(monkeypatch):

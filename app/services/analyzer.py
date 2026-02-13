@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -18,27 +19,53 @@ def _run(cmd: List[str], cwd: str | None = None) -> str:
     return p.stderr or ""
 
 
-def _build_subtitles_cmd(url: str, langs: str) -> List[str]:
+def _build_subtitles_cmd(url: str, langs: str, cookies_arg_path: str | None = None) -> List[str]:
     lang_list = langs.replace(" ", "")
     manual_mode = os.getenv("YTDLP_MANUAL_MODE", "false").lower() in {"1", "true", "yes", "on"}
 
-    cmd = ["yt-dlp", "--write-auto-subs", "--sub-langs", lang_list, "--skip-download"]
+    cmd = [
+        "yt-dlp",
+        "--write-auto-subs",
+        "--sub-langs",
+        lang_list,
+        "--skip-download",
+        "--ignore-no-formats-error",
+        "--js-runtimes",
+        "node",
+        "--extractor-args",
+        "youtube:player_client=web,android",
+    ]
 
     # Default mode tries both regular and auto subtitles.
     # Manual mode mimics the successful host command as close as possible.
     if not manual_mode:
         cmd.insert(2, "--write-subs")
 
-    cookies_path = os.getenv("YTDLP_COOKIES_PATH", "").strip()
-    if cookies_path:
-        cmd.extend(["--cookies", cookies_path])
+    if cookies_arg_path:
+        cmd.extend(["--cookies", cookies_arg_path])
 
     cmd.extend(["-o", "%(id)s.%(ext)s", url])
     return cmd
 
 
+def _prepare_cookies_path(workdir: str) -> str | None:
+    cookies_path = os.getenv("YTDLP_COOKIES_PATH", "").strip()
+    if not cookies_path:
+        return None
+
+    src = Path(cookies_path)
+    if not src.exists():
+        return None
+
+    # Copy to writable temp path to avoid yt-dlp save errors on read-only mounts.
+    dst = Path(workdir) / "cookies.txt"
+    shutil.copyfile(src, dst)
+    return str(dst)
+
+
 def _extract_subtitles(url: str, langs: str, workdir: str) -> tuple[str | None, str]:
-    cmd = _build_subtitles_cmd(url, langs)
+    cookies_arg_path = _prepare_cookies_path(workdir)
+    cmd = _build_subtitles_cmd(url, langs, cookies_arg_path=cookies_arg_path)
     stderr = _run(cmd, cwd=workdir)
 
     for ext in ("*.vtt", "*.srt"):
