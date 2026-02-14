@@ -135,9 +135,10 @@ def _extract_subtitles(
     langs: str,
     workdir: str,
     include_regular_subs_override: bool | None = None,
+    run_list_subs_debug: bool = False,
 ) -> tuple[str | None, str, List[str], Dict]:
     cookies_arg_path = _prepare_cookies_path(workdir)
-    list_subs_debug = _list_subs_debug(url, langs, cookies_arg_path=cookies_arg_path)
+    list_subs_debug = _list_subs_debug(url, langs, cookies_arg_path=cookies_arg_path) if run_list_subs_debug else {}
     cmd = _build_subtitles_cmd(
         url,
         langs,
@@ -337,7 +338,12 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
             logger.debug("yt-dlp primary command preview: %s", cmd_preview)
 
         try:
-            raw_subs, stderr, used_cmd, file_debug = _extract_subtitles(url, primary_langs, td)
+            raw_subs, stderr, used_cmd, file_debug = _extract_subtitles(
+                url,
+                primary_langs,
+                td,
+                run_list_subs_debug=debug_mode,
+            )
         except Exception as e:
             msg = str(e)
             status = "extract_error"
@@ -371,6 +377,7 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                     primary_langs,
                     td,
                     include_regular_subs_override=True,
+                    run_list_subs_debug=debug_mode,
                 )
                 if raw_subs:
                     file_debug = file_debug_fallback
@@ -388,6 +395,7 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                     fallback_langs,
                     td,
                     include_regular_subs_override=False,
+                    run_list_subs_debug=debug_mode,
                 )
                 if raw_subs:
                     file_debug = file_debug_lang_fallback
@@ -405,6 +413,7 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                     fallback_langs,
                     td,
                     include_regular_subs_override=True,
+                    run_list_subs_debug=debug_mode,
                 )
                 if raw_subs:
                     file_debug = file_debug_lang_regular
