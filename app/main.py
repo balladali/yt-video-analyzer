@@ -17,6 +17,7 @@ app = FastAPI(title="yt-video-analyzer", version="0.1.0")
 class AnalyzeRequest(BaseModel):
     url: HttpUrl
     lang: str = "ru,en"
+    user_prompt: str | None = None
 
 
 @app.on_event("startup")
@@ -42,5 +43,5 @@ def health():
 
 @app.post("/analyze")
 def analyze(req: AnalyzeRequest):
-    result = analyze_video(str(req.url), req.lang)
+    result = analyze_video(str(req.url), req.lang, user_prompt=req.user_prompt)
     return result

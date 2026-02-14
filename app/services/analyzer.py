@@ -243,11 +243,11 @@ def _cache_ttl_sec() -> int:
         return 900
 
 
-def _cache_get(url: str, langs: str) -> Dict | None:
+def _cache_get(url: str, langs: str, user_prompt: str | None = None) -> Dict | None:
     ttl = _cache_ttl_sec()
     if ttl <= 0:
         return None
-    key = (url, _normalize_langs(langs))
+    key = (url, _normalize_langs(langs), (user_prompt or "").strip())
     now = time.time()
     with _CACHE_LOCK:
         item = _ANALYZE_CACHE.get(key)
@@ -260,16 +260,16 @@ def _cache_get(url: str, langs: str) -> Dict | None:
         return dict(payload)
 
 
-def _cache_put(url: str, langs: str, payload: Dict) -> None:
+def _cache_put(url: str, langs: str, payload: Dict, user_prompt: str | None = None) -> None:
     ttl = _cache_ttl_sec()
     if ttl <= 0:
         return
-    key = (url, _normalize_langs(langs))
+    key = (url, _normalize_langs(langs), (user_prompt or "").strip())
     with _CACHE_LOCK:
         _ANALYZE_CACHE[key] = (time.time(), dict(payload))
 
 
-def _summarize_with_llm(text: str) -> Dict:
+def _summarize_with_llm(text: str, user_prompt: str | None = None) -> Dict:
     api_key = os.getenv("OPENROUTER_API_KEY")
     model = os.getenv("LLM_MODEL", "openai/gpt-4o-mini")
     if not api_key:
@@ -278,10 +278,21 @@ def _summarize_with_llm(text: str) -> Dict:
             "key_points": [],
         }
 
-    prompt = (
-        "Сделай краткий разбор видео по транскрипту. "
-        "Верни JSON с полями summary (строка) и key_points (массив строк, 5-8 пунктов)."
-    )
+    normalized_prompt = (user_prompt or "").strip()
+    is_default_analyze = (not normalized_prompt) or bool(re.search(r"проанализир(?:уй|овать|уйте)|анализ", normalized_prompt, re.IGNORECASE))
+
+    if is_default_analyze:
+        prompt = (
+            "Сделай краткий разбор видео по транскрипту. "
+            "Верни JSON с полями summary (строка) и key_points (массив строк, 5-8 пунктов)."
+        )
+    else:
+        prompt = (
+            "Выполни задачу пользователя строго по транскрипту видео. "
+            "Если данных в транскрипте недостаточно, так и скажи. "
+            "Верни JSON с полями summary (основной ответ пользователю) и key_points (массив коротких пунктов, 3-8).\n"
+            f"Задача пользователя: {normalized_prompt}"
+        )
 
     resp = requests.post(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -293,7 +304,7 @@ def _summarize_with_llm(text: str) -> Dict:
             "model": model,
             "response_format": {"type": "json_object"},
             "messages": [
-                {"role": "system", "content": "Ты помощник для анализа видео по субтитрам."},
+                {"role": "system", "content": "Ты помощник для анализа видео по субтитрам. Отвечай по запросу пользователя, без выдумок."},
                 {"role": "user", "content": f"{prompt}\n\nТранскрипт:\n{text[:12000]}"},
             ],
             "temperature": 0.2,
@@ -312,12 +323,12 @@ def _summarize_with_llm(text: str) -> Dict:
     return parsed
 
 
-def analyze_video(url: str, langs: str = "ru,en") -> Dict:
+def analyze_video(url: str, langs: str = "ru,en", user_prompt: str | None = None) -> Dict:
     debug_mode = os.getenv("YTDLP_DEBUG", "false").lower() in {"1", "true", "yes", "on"}
     keep_tmp = os.getenv("YTDLP_KEEP_TMP", "false").lower() in {"1", "true", "yes", "on"}
     runtime_debug = _runtime_debug_info()
 
-    cached = _cache_get(url, langs)
+    cached = _cache_get(url, langs, user_prompt=user_prompt)
     if cached is not None:
         logger.debug("Cache hit for url=%s langs=%s", url, _normalize_langs(langs))
         cached["cache_hit"] = True
@@ -367,7 +378,7 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                     "tmp_kept": keep_tmp,
                 }
                 out["debug"] = msg[-3000:]
-            _cache_put(url, langs, out)
+            _cache_put(url, langs, out, user_prompt=user_prompt)
             return out
 
         if not raw_subs and fallback_regular_on_empty:
@@ -446,11 +457,11 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                 if stderr:
                     out["debug"] = stderr[-3000:]
                     out["stderr_full"] = stderr[-20000:]
-            _cache_put(url, langs, out)
+            _cache_put(url, langs, out, user_prompt=user_prompt)
             return out
 
         transcript = _clean_vtt(raw_subs)
-        llm = _summarize_with_llm(transcript)
+        llm = _summarize_with_llm(transcript, user_prompt=user_prompt)
 
         out = {
             "url": url,
@@ -470,7 +481,7 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
             if stderr:
                 out["debug"] = stderr[-1000:]
                 out["stderr_full"] = stderr[-20000:]
-        _cache_put(url, langs, out)
+        _cache_put(url, langs, out, user_prompt=user_prompt)
         return out
     finally:
         if keep_tmp:
