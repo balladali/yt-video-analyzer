@@ -103,7 +103,7 @@ def _extract_subtitles(
     langs: str,
     workdir: str,
     include_regular_subs_override: bool | None = None,
-) -> tuple[str | None, str, List[str]]:
+) -> tuple[str | None, str, List[str], Dict]:
     cookies_arg_path = _prepare_cookies_path(workdir)
     cmd = _build_subtitles_cmd(
         url,
@@ -117,11 +117,36 @@ def _extract_subtitles(
         files = list(Path(workdir).glob(ext))
         logger.debug("Subtitle scan for %s found %d files", ext, len(files))
         if files:
-            logger.debug("Using subtitle file: %s", files[0])
-            return files[0].read_text(encoding="utf-8", errors="ignore"), stderr, cmd
+            file_path = files[0]
+            size = file_path.stat().st_size if file_path.exists() else 0
+            logger.debug("Using subtitle file: %s (size=%d bytes)", file_path, size)
+
+            preview = ""
+            try:
+                preview = file_path.read_text(encoding="utf-8", errors="ignore")[:160]
+            except Exception:
+                preview = ""
+            logger.debug("Subtitle preview: %s", preview.replace("\n", " "))
+
+            return (
+                file_path.read_text(encoding="utf-8", errors="ignore"),
+                stderr,
+                cmd,
+                {
+                    "subtitle_file_found": True,
+                    "subtitle_file_path": str(file_path),
+                    "subtitle_file_size": size,
+                    "subtitle_preview": preview,
+                },
+            )
 
     logger.debug("No subtitle files found in workdir=%s", workdir)
-    return None, stderr, cmd
+    return None, stderr, cmd, {
+        "subtitle_file_found": False,
+        "subtitle_file_path": "",
+        "subtitle_file_size": 0,
+        "subtitle_preview": "",
+    }
 
 
 def _runtime_debug_info() -> Dict:
@@ -268,7 +293,7 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
             logger.debug("yt-dlp primary command preview: %s", cmd_preview)
 
         try:
-            raw_subs, stderr, used_cmd = _extract_subtitles(url, primary_langs, td)
+            raw_subs, stderr, used_cmd, file_debug = _extract_subtitles(url, primary_langs, td)
         except Exception as e:
             msg = str(e)
             status = "extract_error"
@@ -295,12 +320,14 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
 
         if not raw_subs and fallback_regular_on_empty:
             try:
-                raw_subs, stderr_fallback, used_cmd_fallback = _extract_subtitles(
+                raw_subs, stderr_fallback, used_cmd_fallback, file_debug_fallback = _extract_subtitles(
                     url,
                     primary_langs,
                     td,
                     include_regular_subs_override=True,
                 )
+                if raw_subs:
+                    file_debug = file_debug_fallback
                 stderr = (stderr or "") + "\n" + (stderr_fallback or "")
                 used_cmd = used_cmd_fallback
                 if debug_mode:
@@ -310,12 +337,14 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
 
         if not raw_subs and fallback_langs_on_empty and fallback_langs and fallback_langs != primary_langs:
             try:
-                raw_subs, stderr_lang_fallback, used_cmd_lang_fallback = _extract_subtitles(
+                raw_subs, stderr_lang_fallback, used_cmd_lang_fallback, file_debug_lang_fallback = _extract_subtitles(
                     url,
                     fallback_langs,
                     td,
                     include_regular_subs_override=False,
                 )
+                if raw_subs:
+                    file_debug = file_debug_lang_fallback
                 stderr = (stderr or "") + "\n" + (stderr_lang_fallback or "")
                 used_cmd = used_cmd_lang_fallback
                 if debug_mode:
@@ -325,12 +354,14 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
 
         if not raw_subs and fallback_regular_on_empty and fallback_langs_on_empty and fallback_langs and fallback_langs != primary_langs:
             try:
-                raw_subs, stderr_lang_regular, used_cmd_lang_regular = _extract_subtitles(
+                raw_subs, stderr_lang_regular, used_cmd_lang_regular, file_debug_lang_regular = _extract_subtitles(
                     url,
                     fallback_langs,
                     td,
                     include_regular_subs_override=True,
                 )
+                if raw_subs:
+                    file_debug = file_debug_lang_regular
                 stderr = (stderr or "") + "\n" + (stderr_lang_regular or "")
                 used_cmd = used_cmd_lang_regular
                 if debug_mode:
@@ -353,6 +384,7 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                 out["debug_info"] = {
                     **runtime_debug,
                     "yt_dlp_command": used_cmd if 'used_cmd' in locals() else cmd_preview,
+                    **(file_debug if 'file_debug' in locals() else {}),
                 }
                 if stderr:
                     out["debug"] = stderr[-3000:]
@@ -373,6 +405,7 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
             out["debug_info"] = {
                 **runtime_debug,
                 "yt_dlp_command": used_cmd if 'used_cmd' in locals() else cmd_preview,
+                **(file_debug if 'file_debug' in locals() else {}),
             }
             if stderr:
                 out["debug"] = stderr[-1000:]
