@@ -61,9 +61,11 @@ def _build_subtitles_cmd(
         "node",
         "--remote-components",
         "ejs:github",
-        "--extractor-args",
-        "youtube:player_client=web",
     ]
+
+    extractor_args = os.getenv("YTDLP_EXTRACTOR_ARGS", "").strip()
+    if extractor_args:
+        cmd.extend(["--extractor-args", extractor_args])
 
     # To reduce request footprint, regular subtitles are OFF by default.
     # Enable with YTDLP_INCLUDE_REGULAR_SUBS=true when needed.
@@ -110,9 +112,10 @@ def _list_subs_debug(url: str, langs: str, cookies_arg_path: str | None = None) 
         "node",
         "--remote-components",
         "ejs:github",
-        "--extractor-args",
-        "youtube:player_client=web",
     ]
+    extractor_args = os.getenv("YTDLP_EXTRACTOR_ARGS", "").strip()
+    if extractor_args:
+        cmd.extend(["--extractor-args", extractor_args])
     if cookies_arg_path:
         cmd.extend(["--cookies", cookies_arg_path])
     cmd.append(url)

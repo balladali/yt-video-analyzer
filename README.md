@@ -56,6 +56,7 @@ docker run --rm -p 8000:8000 \
 
 Полезные env-переменные:
 - `YTDLP_COOKIES_PATH` — путь к cookies внутри контейнера (например `/app/cookies.txt`)
+- `YTDLP_EXTRACTOR_ARGS` — опциональные extractor-args для yt-dlp (по умолчанию пусто; не форсим player_client)
 - `YTDLP_MANUAL_MODE=true` — запускать yt-dlp в режиме, максимально близком к ручной команде
 - `YTDLP_INCLUDE_REGULAR_SUBS=false` — не дёргать обычные сабы в первой попытке (меньше запросов к YouTube)
 - `YTDLP_FALLBACK_REGULAR_ON_EMPTY=true` — если авто-сабы пустые, сделать fallback-попытку с обычными сабами
