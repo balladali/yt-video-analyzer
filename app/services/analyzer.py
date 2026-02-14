@@ -98,6 +98,35 @@ def _prepare_cookies_path(workdir: str) -> str | None:
     return str(dst)
 
 
+def _list_subs_debug(url: str, langs: str, cookies_arg_path: str | None = None) -> Dict:
+    cmd = [
+        "yt-dlp",
+        "--list-subs",
+        "--sub-langs",
+        _normalize_langs(langs),
+        "--skip-download",
+        "--ignore-no-formats-error",
+        "--js-runtimes",
+        "node",
+        "--remote-components",
+        "ejs:github",
+        "--extractor-args",
+        "youtube:player_client=web",
+    ]
+    if cookies_arg_path:
+        cmd.extend(["--cookies", cookies_arg_path])
+    cmd.append(url)
+
+    logger.debug("Running list-subs debug command: %s", cmd)
+    p = subprocess.run(cmd, capture_output=True, text=True)
+    return {
+        "list_subs_command": cmd,
+        "list_subs_rc": p.returncode,
+        "list_subs_stdout": (p.stdout or "")[-20000:],
+        "list_subs_stderr": (p.stderr or "")[-20000:],
+    }
+
+
 def _extract_subtitles(
     url: str,
     langs: str,
@@ -105,6 +134,7 @@ def _extract_subtitles(
     include_regular_subs_override: bool | None = None,
 ) -> tuple[str | None, str, List[str], Dict]:
     cookies_arg_path = _prepare_cookies_path(workdir)
+    list_subs_debug = _list_subs_debug(url, langs, cookies_arg_path=cookies_arg_path)
     cmd = _build_subtitles_cmd(
         url,
         langs,
@@ -140,6 +170,7 @@ def _extract_subtitles(
                     "subtitle_preview": preview,
                     "workdir_files": workdir_files,
                     "stderr_len": len(stderr or ""),
+                    **list_subs_debug,
                 },
             )
 
@@ -151,6 +182,7 @@ def _extract_subtitles(
         "subtitle_preview": "",
         "workdir_files": workdir_files,
         "stderr_len": len(stderr or ""),
+        **list_subs_debug,
     }
 
 
