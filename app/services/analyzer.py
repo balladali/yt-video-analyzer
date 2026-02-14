@@ -160,6 +160,7 @@ def _runtime_debug_info() -> Dict:
     include_regular_subs = os.getenv("YTDLP_INCLUDE_REGULAR_SUBS", "false").lower() in {"1", "true", "yes", "on"}
     fallback_regular_on_empty = os.getenv("YTDLP_FALLBACK_REGULAR_ON_EMPTY", "true").lower() in {"1", "true", "yes", "on"}
     fallback_langs_on_empty = os.getenv("YTDLP_FALLBACK_LANGS_ON_EMPTY", "true").lower() in {"1", "true", "yes", "on"}
+    keep_tmp = os.getenv("YTDLP_KEEP_TMP", "false").lower() in {"1", "true", "yes", "on"}
     return {
         "cookies_configured": bool(cookies_path),
         "cookies_file_exists": bool(cookies_path and Path(cookies_path).exists()),
@@ -167,6 +168,7 @@ def _runtime_debug_info() -> Dict:
         "include_regular_subs": include_regular_subs,
         "fallback_regular_on_empty": fallback_regular_on_empty,
         "fallback_langs_on_empty": fallback_langs_on_empty,
+        "keep_tmp": keep_tmp,
         "sub_langs_default": os.getenv("YTDLP_SUB_LANGS", "ru,ru-orig"),
         "sub_langs_fallback": _fallback_langs(),
     }
@@ -276,6 +278,7 @@ def _summarize_with_llm(text: str) -> Dict:
 
 def analyze_video(url: str, langs: str = "ru,en") -> Dict:
     debug_mode = os.getenv("YTDLP_DEBUG", "false").lower() in {"1", "true", "yes", "on"}
+    keep_tmp = os.getenv("YTDLP_KEEP_TMP", "false").lower() in {"1", "true", "yes", "on"}
     runtime_debug = _runtime_debug_info()
 
     cached = _cache_get(url, langs)
@@ -287,7 +290,8 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
             cached["debug_info"]["cache_ttl_sec"] = _cache_ttl_sec()
         return cached
 
-    with tempfile.TemporaryDirectory(prefix="ytva-") as td:
+    td = tempfile.mkdtemp(prefix="ytva-")
+    try:
         primary_langs = _normalize_langs(langs)
         fallback_langs = _fallback_langs()
         cmd_preview = _build_subtitles_cmd(url, primary_langs)
@@ -318,6 +322,8 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                 out["debug_info"] = {
                     **runtime_debug,
                     "yt_dlp_command": cmd_preview,
+                    "tmp_dir": td,
+                    "tmp_kept": keep_tmp,
                 }
                 out["debug"] = msg[-3000:]
             _cache_put(url, langs, out)
@@ -389,6 +395,8 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                 out["debug_info"] = {
                     **runtime_debug,
                     "yt_dlp_command": used_cmd if 'used_cmd' in locals() else cmd_preview,
+                    "tmp_dir": td,
+                    "tmp_kept": keep_tmp,
                     **(file_debug if 'file_debug' in locals() else {}),
                 }
                 if stderr:
@@ -411,6 +419,8 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
             out["debug_info"] = {
                 **runtime_debug,
                 "yt_dlp_command": used_cmd if 'used_cmd' in locals() else cmd_preview,
+                "tmp_dir": td,
+                "tmp_kept": keep_tmp,
                 **(file_debug if 'file_debug' in locals() else {}),
             }
             if stderr:
@@ -418,3 +428,8 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                 out["stderr_full"] = stderr[-20000:]
         _cache_put(url, langs, out)
         return out
+    finally:
+        if keep_tmp:
+            logger.info("Keeping temp directory for debug: %s", td)
+        else:
+            shutil.rmtree(td, ignore_errors=True)
