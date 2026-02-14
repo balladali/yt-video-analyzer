@@ -57,7 +57,8 @@ docker run --rm -p 8000:8000 \
 Полезные env-переменные:
 - `YTDLP_COOKIES_PATH` — путь к cookies внутри контейнера (например `/app/cookies.txt`)
 - `YTDLP_MANUAL_MODE=true` — запускать yt-dlp в режиме, максимально близком к ручной команде
-- `YTDLP_INCLUDE_REGULAR_SUBS=false` — не дёргать обычные сабы (меньше запросов к YouTube)
+- `YTDLP_INCLUDE_REGULAR_SUBS=false` — не дёргать обычные сабы в первой попытке (меньше запросов к YouTube)
+- `YTDLP_FALLBACK_REGULAR_ON_EMPTY=true` — если авто-сабы пустые, сделать одну fallback-попытку с обычными сабами
 - `YTDLP_SUB_LANGS=ru,ru-orig,en,en-orig` — приоритетная цепочка языков
 - `YTDLP_DEBUG=true` — добавлять debug-поле с хвостом ошибки yt-dlp в ответ API
 - `ANALYZE_CACHE_TTL_SEC=900` — кэш результатов по URL, чтобы не ходить в YouTube повторно

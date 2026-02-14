@@ -33,6 +33,13 @@ def test_build_subtitles_cmd_include_regular_subs(monkeypatch):
     assert "--write-subs" in cmd
 
 
+def test_build_subtitles_cmd_regular_subs_override(monkeypatch):
+    monkeypatch.setenv("YTDLP_MANUAL_MODE", "true")
+    monkeypatch.setenv("YTDLP_INCLUDE_REGULAR_SUBS", "false")
+    cmd = _build_subtitles_cmd("https://youtu.be/abc", "ru,en", include_regular_subs_override=True)
+    assert "--write-subs" in cmd
+
+
 def test_normalize_langs_default_chain(monkeypatch):
     monkeypatch.delenv("YTDLP_SUB_LANGS", raising=False)
     assert _normalize_langs("ru,en") == "ru,ru-orig,en,en-orig"
@@ -43,8 +50,10 @@ def test_runtime_debug_info(monkeypatch, tmp_path):
     cookie_file.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
     monkeypatch.setenv("YTDLP_COOKIES_PATH", str(cookie_file))
     monkeypatch.setenv("YTDLP_MANUAL_MODE", "true")
+    monkeypatch.setenv("YTDLP_FALLBACK_REGULAR_ON_EMPTY", "true")
 
     info = _runtime_debug_info()
     assert info["cookies_configured"] is True
     assert info["cookies_file_exists"] is True
     assert info["manual_mode"] is True
+    assert info["fallback_regular_on_empty"] is True
