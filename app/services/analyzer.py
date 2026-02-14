@@ -4,12 +4,17 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
+from threading import Lock
 from typing import Dict, List
 
 import requests
 
 logger = logging.getLogger(__name__)
+
+_ANALYZE_CACHE: dict[tuple[str, str], tuple[float, Dict]] = {}
+_CACHE_LOCK = Lock()
 
 
 def _run(cmd: List[str], cwd: str | None = None) -> str:
@@ -19,9 +24,17 @@ def _run(cmd: List[str], cwd: str | None = None) -> str:
     return p.stderr or ""
 
 
+def _normalize_langs(langs: str | None) -> str:
+    default_langs = os.getenv("YTDLP_SUB_LANGS", "ru,ru-orig,en,en-orig")
+    if not langs or not langs.strip() or langs.strip() == "ru,en":
+        return default_langs
+    return langs.replace(" ", "")
+
+
 def _build_subtitles_cmd(url: str, langs: str, cookies_arg_path: str | None = None) -> List[str]:
-    lang_list = langs.replace(" ", "")
-    manual_mode = os.getenv("YTDLP_MANUAL_MODE", "false").lower() in {"1", "true", "yes", "on"}
+    lang_list = _normalize_langs(langs)
+    manual_mode = os.getenv("YTDLP_MANUAL_MODE", "true").lower() in {"1", "true", "yes", "on"}
+    include_regular_subs = os.getenv("YTDLP_INCLUDE_REGULAR_SUBS", "false").lower() in {"1", "true", "yes", "on"}
 
     cmd = [
         "yt-dlp",
@@ -36,9 +49,9 @@ def _build_subtitles_cmd(url: str, langs: str, cookies_arg_path: str | None = No
         "youtube:player_client=web,android",
     ]
 
-    # Default mode tries both regular and auto subtitles.
-    # Manual mode mimics the successful host command as close as possible.
-    if not manual_mode:
+    # To reduce request footprint, regular subtitles are OFF by default.
+    # Enable with YTDLP_INCLUDE_REGULAR_SUBS=true when needed.
+    if include_regular_subs and not manual_mode:
         cmd.insert(2, "--write-subs")
 
     if cookies_arg_path:
@@ -77,11 +90,14 @@ def _extract_subtitles(url: str, langs: str, workdir: str) -> tuple[str | None, 
 
 def _runtime_debug_info() -> Dict:
     cookies_path = os.getenv("YTDLP_COOKIES_PATH", "").strip()
-    manual_mode = os.getenv("YTDLP_MANUAL_MODE", "false").lower() in {"1", "true", "yes", "on"}
+    manual_mode = os.getenv("YTDLP_MANUAL_MODE", "true").lower() in {"1", "true", "yes", "on"}
+    include_regular_subs = os.getenv("YTDLP_INCLUDE_REGULAR_SUBS", "false").lower() in {"1", "true", "yes", "on"}
     return {
         "cookies_configured": bool(cookies_path),
         "cookies_file_exists": bool(cookies_path and Path(cookies_path).exists()),
         "manual_mode": manual_mode,
+        "include_regular_subs": include_regular_subs,
+        "sub_langs_default": os.getenv("YTDLP_SUB_LANGS", "ru,ru-orig,en,en-orig"),
     }
 
 
@@ -108,6 +124,40 @@ def _clean_vtt(text: str) -> str:
         prev = ln
 
     return "\n".join(deduped).strip()
+
+
+def _cache_ttl_sec() -> int:
+    raw = os.getenv("ANALYZE_CACHE_TTL_SEC", "900").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 900
+
+
+def _cache_get(url: str, langs: str) -> Dict | None:
+    ttl = _cache_ttl_sec()
+    if ttl <= 0:
+        return None
+    key = (url, _normalize_langs(langs))
+    now = time.time()
+    with _CACHE_LOCK:
+        item = _ANALYZE_CACHE.get(key)
+        if not item:
+            return None
+        ts, payload = item
+        if now - ts > ttl:
+            _ANALYZE_CACHE.pop(key, None)
+            return None
+        return dict(payload)
+
+
+def _cache_put(url: str, langs: str, payload: Dict) -> None:
+    ttl = _cache_ttl_sec()
+    if ttl <= 0:
+        return
+    key = (url, _normalize_langs(langs))
+    with _CACHE_LOCK:
+        _ANALYZE_CACHE[key] = (time.time(), dict(payload))
 
 
 def _summarize_with_llm(text: str) -> Dict:
@@ -157,6 +207,14 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
     debug_mode = os.getenv("YTDLP_DEBUG", "false").lower() in {"1", "true", "yes", "on"}
     runtime_debug = _runtime_debug_info()
 
+    cached = _cache_get(url, langs)
+    if cached is not None:
+        cached["cache_hit"] = True
+        if debug_mode:
+            cached.setdefault("debug_info", {})
+            cached["debug_info"]["cache_ttl_sec"] = _cache_ttl_sec()
+        return cached
+
     with tempfile.TemporaryDirectory(prefix="ytva-") as td:
         cmd_preview = _build_subtitles_cmd(url, langs)
         if debug_mode:
@@ -185,6 +243,7 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                     "yt_dlp_command": cmd_preview,
                 }
                 out["debug"] = msg[-3000:]
+            _cache_put(url, langs, out)
             return out
 
         if not raw_subs:
@@ -202,6 +261,7 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                 }
                 if stderr:
                     out["debug"] = stderr[-3000:]
+            _cache_put(url, langs, out)
             return out
 
         transcript = _clean_vtt(raw_subs)
@@ -221,4 +281,5 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
             }
             if stderr:
                 out["debug"] = stderr[-1000:]
+        _cache_put(url, langs, out)
         return out
