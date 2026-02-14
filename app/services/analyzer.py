@@ -55,8 +55,10 @@ def _build_subtitles_cmd(
         "--ignore-no-formats-error",
         "--js-runtimes",
         "node",
+        "--remote-components",
+        "ejs:github",
         "--extractor-args",
-        "youtube:player_client=web,android",
+        "youtube:player_client=web",
     ]
 
     # To reduce request footprint, regular subtitles are OFF by default.
