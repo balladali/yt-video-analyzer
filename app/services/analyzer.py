@@ -112,6 +112,7 @@ def _extract_subtitles(
         include_regular_subs_override=include_regular_subs_override,
     )
     stderr = _run(cmd, cwd=workdir)
+    workdir_files = sorted([p.name for p in Path(workdir).glob("*")])
 
     for ext in ("*.vtt", "*.srt"):
         files = list(Path(workdir).glob(ext))
@@ -137,6 +138,8 @@ def _extract_subtitles(
                     "subtitle_file_path": str(file_path),
                     "subtitle_file_size": size,
                     "subtitle_preview": preview,
+                    "workdir_files": workdir_files,
+                    "stderr_len": len(stderr or ""),
                 },
             )
 
@@ -146,6 +149,8 @@ def _extract_subtitles(
         "subtitle_file_path": "",
         "subtitle_file_size": 0,
         "subtitle_preview": "",
+        "workdir_files": workdir_files,
+        "stderr_len": len(stderr or ""),
     }
 
 
@@ -388,6 +393,7 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                 }
                 if stderr:
                     out["debug"] = stderr[-3000:]
+                    out["stderr_full"] = stderr[-20000:]
             _cache_put(url, langs, out)
             return out
 
@@ -409,5 +415,6 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
             }
             if stderr:
                 out["debug"] = stderr[-1000:]
+                out["stderr_full"] = stderr[-20000:]
         _cache_put(url, langs, out)
         return out
