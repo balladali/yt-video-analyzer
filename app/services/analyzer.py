@@ -18,9 +18,12 @@ _CACHE_LOCK = Lock()
 
 
 def _run(cmd: List[str], cwd: str | None = None) -> str:
+    logger.debug("Running command: %s (cwd=%s)", cmd, cwd)
     p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     if p.returncode != 0:
+        logger.debug("Command failed rc=%s stderr=%s", p.returncode, (p.stderr or "")[-3000:])
         raise RuntimeError(f"Command failed: {' '.join(cmd)}\n{p.stderr}")
+    logger.debug("Command ok rc=%s stderr_tail=%s", p.returncode, (p.stderr or "")[-1000:])
     return p.stderr or ""
 
 
@@ -71,15 +74,21 @@ def _build_subtitles_cmd(
 def _prepare_cookies_path(workdir: str) -> str | None:
     cookies_path = os.getenv("YTDLP_COOKIES_PATH", "").strip()
     if not cookies_path:
+        logger.debug("Cookies path is not configured")
         return None
 
     src = Path(cookies_path)
     if not src.exists():
+        logger.debug("Cookies file does not exist: %s", cookies_path)
+        return None
+    if src.is_dir():
+        logger.debug("Cookies path points to a directory, expected file: %s", cookies_path)
         return None
 
     # Copy to writable temp path to avoid yt-dlp save errors on read-only mounts.
     dst = Path(workdir) / "cookies.txt"
     shutil.copyfile(src, dst)
+    logger.debug("Copied cookies file to temp path: %s", dst)
     return str(dst)
 
 
@@ -100,8 +109,12 @@ def _extract_subtitles(
 
     for ext in ("*.vtt", "*.srt"):
         files = list(Path(workdir).glob(ext))
+        logger.debug("Subtitle scan for %s found %d files", ext, len(files))
         if files:
+            logger.debug("Using subtitle file: %s", files[0])
             return files[0].read_text(encoding="utf-8", errors="ignore"), stderr, cmd
+
+    logger.debug("No subtitle files found in workdir=%s", workdir)
     return None, stderr, cmd
 
 
@@ -228,6 +241,7 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
 
     cached = _cache_get(url, langs)
     if cached is not None:
+        logger.debug("Cache hit for url=%s langs=%s", url, _normalize_langs(langs))
         cached["cache_hit"] = True
         if debug_mode:
             cached.setdefault("debug_info", {})
@@ -239,6 +253,7 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
         fallback_regular_on_empty = runtime_debug.get("fallback_regular_on_empty", True)
         if debug_mode:
             logger.info("yt-dlp analyze start: url=%s, manual_mode=%s, cookies_configured=%s, cookies_file_exists=%s", url, runtime_debug["manual_mode"], runtime_debug["cookies_configured"], runtime_debug["cookies_file_exists"])
+            logger.debug("yt-dlp primary command preview: %s", cmd_preview)
 
         try:
             raw_subs, stderr, used_cmd = _extract_subtitles(url, langs, td)
@@ -280,6 +295,9 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                     logger.info("yt-dlp fallback with regular subtitles enabled for url=%s", url)
             except Exception:
                 logger.exception("yt-dlp fallback extraction failed for url=%s", url)
+
+        if debug_mode and not raw_subs:
+            logger.debug("No subtitles after primary+fallback attempts for url=%s", url)
 
         if not raw_subs:
             out = {
