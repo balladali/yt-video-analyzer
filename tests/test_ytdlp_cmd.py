@@ -42,7 +42,7 @@ def test_build_subtitles_cmd_regular_subs_override(monkeypatch):
 
 def test_normalize_langs_default_chain(monkeypatch):
     monkeypatch.delenv("YTDLP_SUB_LANGS", raising=False)
-    assert _normalize_langs("ru,en") == "ru,ru-orig,en,en-orig"
+    assert _normalize_langs("ru,en") == "ru,ru-orig"
 
 
 def test_runtime_debug_info(monkeypatch, tmp_path):

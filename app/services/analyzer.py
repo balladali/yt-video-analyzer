@@ -28,10 +28,14 @@ def _run(cmd: List[str], cwd: str | None = None) -> str:
 
 
 def _normalize_langs(langs: str | None) -> str:
-    default_langs = os.getenv("YTDLP_SUB_LANGS", "ru,ru-orig,en,en-orig")
+    default_langs = os.getenv("YTDLP_SUB_LANGS", "ru,ru-orig")
     if not langs or not langs.strip() or langs.strip() == "ru,en":
         return default_langs
     return langs.replace(" ", "")
+
+
+def _fallback_langs() -> str:
+    return os.getenv("YTDLP_SUB_LANGS_FALLBACK", "en,en-orig").replace(" ", "")
 
 
 def _build_subtitles_cmd(
@@ -125,13 +129,16 @@ def _runtime_debug_info() -> Dict:
     manual_mode = os.getenv("YTDLP_MANUAL_MODE", "true").lower() in {"1", "true", "yes", "on"}
     include_regular_subs = os.getenv("YTDLP_INCLUDE_REGULAR_SUBS", "false").lower() in {"1", "true", "yes", "on"}
     fallback_regular_on_empty = os.getenv("YTDLP_FALLBACK_REGULAR_ON_EMPTY", "true").lower() in {"1", "true", "yes", "on"}
+    fallback_langs_on_empty = os.getenv("YTDLP_FALLBACK_LANGS_ON_EMPTY", "true").lower() in {"1", "true", "yes", "on"}
     return {
         "cookies_configured": bool(cookies_path),
         "cookies_file_exists": bool(cookies_path and Path(cookies_path).exists()),
         "manual_mode": manual_mode,
         "include_regular_subs": include_regular_subs,
         "fallback_regular_on_empty": fallback_regular_on_empty,
-        "sub_langs_default": os.getenv("YTDLP_SUB_LANGS", "ru,ru-orig,en,en-orig"),
+        "fallback_langs_on_empty": fallback_langs_on_empty,
+        "sub_langs_default": os.getenv("YTDLP_SUB_LANGS", "ru,ru-orig"),
+        "sub_langs_fallback": _fallback_langs(),
     }
 
 
@@ -251,14 +258,17 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
         return cached
 
     with tempfile.TemporaryDirectory(prefix="ytva-") as td:
-        cmd_preview = _build_subtitles_cmd(url, langs)
+        primary_langs = _normalize_langs(langs)
+        fallback_langs = _fallback_langs()
+        cmd_preview = _build_subtitles_cmd(url, primary_langs)
         fallback_regular_on_empty = runtime_debug.get("fallback_regular_on_empty", True)
+        fallback_langs_on_empty = runtime_debug.get("fallback_langs_on_empty", True)
         if debug_mode:
             logger.info("yt-dlp analyze start: url=%s, manual_mode=%s, cookies_configured=%s, cookies_file_exists=%s", url, runtime_debug["manual_mode"], runtime_debug["cookies_configured"], runtime_debug["cookies_file_exists"])
             logger.debug("yt-dlp primary command preview: %s", cmd_preview)
 
         try:
-            raw_subs, stderr, used_cmd = _extract_subtitles(url, langs, td)
+            raw_subs, stderr, used_cmd = _extract_subtitles(url, primary_langs, td)
         except Exception as e:
             msg = str(e)
             status = "extract_error"
@@ -287,7 +297,7 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
             try:
                 raw_subs, stderr_fallback, used_cmd_fallback = _extract_subtitles(
                     url,
-                    langs,
+                    primary_langs,
                     td,
                     include_regular_subs_override=True,
                 )
@@ -297,6 +307,36 @@ def analyze_video(url: str, langs: str = "ru,en") -> Dict:
                     logger.info("yt-dlp fallback with regular subtitles enabled for url=%s", url)
             except Exception:
                 logger.exception("yt-dlp fallback extraction failed for url=%s", url)
+
+        if not raw_subs and fallback_langs_on_empty and fallback_langs and fallback_langs != primary_langs:
+            try:
+                raw_subs, stderr_lang_fallback, used_cmd_lang_fallback = _extract_subtitles(
+                    url,
+                    fallback_langs,
+                    td,
+                    include_regular_subs_override=False,
+                )
+                stderr = (stderr or "") + "\n" + (stderr_lang_fallback or "")
+                used_cmd = used_cmd_lang_fallback
+                if debug_mode:
+                    logger.info("yt-dlp fallback with fallback langs (%s) for url=%s", fallback_langs, url)
+            except Exception:
+                logger.exception("yt-dlp fallback langs extraction failed for url=%s", url)
+
+        if not raw_subs and fallback_regular_on_empty and fallback_langs_on_empty and fallback_langs and fallback_langs != primary_langs:
+            try:
+                raw_subs, stderr_lang_regular, used_cmd_lang_regular = _extract_subtitles(
+                    url,
+                    fallback_langs,
+                    td,
+                    include_regular_subs_override=True,
+                )
+                stderr = (stderr or "") + "\n" + (stderr_lang_regular or "")
+                used_cmd = used_cmd_lang_regular
+                if debug_mode:
+                    logger.info("yt-dlp fallback with regular subtitles on fallback langs (%s) for url=%s", fallback_langs, url)
+            except Exception:
+                logger.exception("yt-dlp fallback regular+langs extraction failed for url=%s", url)
 
         if debug_mode and not raw_subs:
             logger.debug("No subtitles after primary+fallback attempts for url=%s", url)
