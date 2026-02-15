@@ -287,12 +287,7 @@ def _summarize_with_llm(text: str, user_prompt: str | None = None) -> Dict:
             "Верни JSON с полями summary (строка) и key_points (массив строк, 5-8 пунктов)."
         )
     else:
-        prompt = (
-            "Выполни задачу пользователя строго по транскрипту видео. "
-            "Если данных в транскрипте недостаточно, так и скажи. "
-            "Верни JSON с полями summary (основной ответ пользователю) и key_points (массив коротких пунктов, 3-8).\n"
-            f"Задача пользователя: {normalized_prompt}"
-        )
+        prompt = normalized_prompt
 
     resp = requests.post(
         "https://openrouter.ai/api/v1/chat/completions",
