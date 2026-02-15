@@ -269,6 +269,15 @@ def _cache_put(url: str, langs: str, payload: Dict, user_prompt: str | None = No
         _ANALYZE_CACHE[key] = (time.time(), dict(payload))
 
 
+def _llm_temperature() -> float:
+    raw = os.getenv("LLM_TEMPERATURE", "0.35").strip()
+    try:
+        v = float(raw)
+    except ValueError:
+        return 0.35
+    return max(0.0, min(1.5, v))
+
+
 def _summarize_with_llm(text: str, user_prompt: str | None = None) -> Dict:
     api_key = os.getenv("OPENROUTER_API_KEY")
     model = os.getenv("LLM_MODEL", "openai/gpt-4o-mini")
@@ -304,7 +313,7 @@ def _summarize_with_llm(text: str, user_prompt: str | None = None) -> Dict:
                 {"role": "system", "content": "Ты помощник для анализа видео по субтитрам. Отвечай по запросу пользователя, без выдумок."},
                 {"role": "user", "content": f"{prompt}\n\nТранскрипт:\n{text[:12000]}"},
             ],
-            "temperature": 0.2,
+            "temperature": _llm_temperature(),
         },
         timeout=60,
     )

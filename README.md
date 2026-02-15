@@ -63,6 +63,7 @@ docker run --rm -p 8000:8000 \
 - `YTDLP_SUB_LANGS=ru,ru-orig` — первичная языковая цепочка (сначала пробуем только RU)
 - `YTDLP_FALLBACK_LANGS_ON_EMPTY=true` — при пустом результате сделать fallback по языкам
 - `YTDLP_SUB_LANGS_FALLBACK=en,en-orig` — fallback-языки (только если RU не удалось)
+- `LLM_TEMPERATURE=0.35` — креативность ответа LLM (выше = более вариативно, но меньше строгости)
 - `YTDLP_DEBUG=true` — добавлять debug-поле с хвостом ошибки yt-dlp в ответ API
 - `YTDLP_KEEP_TMP=false` — сохранять `/tmp/ytva-*` после анализа для ручной диагностики файлов
 - `ANALYZE_CACHE_TTL_SEC=900` — кэш результатов по URL, чтобы не ходить в YouTube повторно
