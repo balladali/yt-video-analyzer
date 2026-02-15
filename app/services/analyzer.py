@@ -274,7 +274,8 @@ def _summarize_with_llm(text: str, user_prompt: str | None = None) -> Dict:
     model = os.getenv("LLM_MODEL", "openai/gpt-4o-mini")
     if not api_key:
         return {
-            "summary": "OPENROUTER_API_KEY не задан — возвращаю только транскрипт.",
+            "answer": "OPENROUTER_API_KEY не задан — возвращаю только транскрипт.",
+            "summary": "",
             "key_points": [],
         }
 
@@ -283,21 +284,14 @@ def _summarize_with_llm(text: str, user_prompt: str | None = None) -> Dict:
 
     if is_default_analyze:
         prompt = (
-            "Сделай красивый и понятный разбор видео по транскрипту. "
-            "Верни строго JSON с полями: "
-            "answer (готовый ответ для пользователя с аккуратной структурой), "
-            "summary (краткое резюме), key_points (массив строк, 5-8 пунктов). "
-            "В key_points пиши пункты без нумерации и без маркеров списка. "
-            "Не предлагай пользователю дополнительные действия в конце ответа."
+            "Проанализируй видео по транскрипту и дай понятный, структурированный ответ на русском. "
+            "Не предлагай пользователю дополнительные действия в конце."
         )
     else:
         prompt = (
             f"{normalized_prompt}\n\n"
-            "Верни строго JSON с полями: "
-            "answer (готовый ответ для пользователя с аккуратной структурой), "
-            "summary (краткое резюме), key_points (массив строк, 3-8 пунктов). "
-            "В key_points пиши пункты без нумерации и без маркеров списка. "
-            "Не предлагай пользователю дополнительные действия в конце ответа."
+            "Отвечай строго по транскрипту, структурировано и понятно на русском. "
+            "Не предлагай пользователю дополнительные действия в конце."
         )
 
     resp = requests.post(
@@ -308,7 +302,6 @@ def _summarize_with_llm(text: str, user_prompt: str | None = None) -> Dict:
         },
         json={
             "model": model,
-            "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "system", "content": "Ты помощник для анализа видео по субтитрам. Отвечай по запросу пользователя, без выдумок."},
                 {"role": "user", "content": f"{prompt}\n\nТранскрипт:\n{text[:12000]}"},
@@ -318,47 +311,9 @@ def _summarize_with_llm(text: str, user_prompt: str | None = None) -> Dict:
         timeout=60,
     )
     resp.raise_for_status()
-    content = resp.json()["choices"][0]["message"]["content"]
+    content = (resp.json()["choices"][0]["message"].get("content") or "").strip()
 
-    import json
-
-    try:
-        parsed = json.loads(content)
-    except Exception:
-        parsed = {"answer": content, "summary": content, "key_points": []}
-
-    summary = parsed.get("summary") if isinstance(parsed, dict) else ""
-    if not isinstance(summary, str):
-        summary = str(summary or "")
-
-    key_points = parsed.get("key_points") if isinstance(parsed, dict) else []
-    if isinstance(key_points, str):
-        key_points = [key_points]
-    if not isinstance(key_points, list):
-        key_points = []
-
-    cleaned_points = []
-    for x in key_points:
-        p = str(x).strip()
-        if not p:
-            continue
-        p = re.sub(r"^(?:\d+[\)\].:-]?|[-•*])\s*", "", p).strip()
-        if p:
-            cleaned_points.append(p)
-    key_points = cleaned_points
-
-    answer = parsed.get("answer") if isinstance(parsed, dict) else ""
-    if not isinstance(answer, str):
-        answer = str(answer or "")
-    if not answer.strip():
-        parts = []
-        if summary.strip():
-            parts.append("🎬 Коротко по видео:\n" + summary.strip())
-        if key_points:
-            parts.append("📌 Ключевые пункты:\n" + "\n".join(f"• {p}" for p in key_points))
-        answer = "\n\n".join(parts).strip()
-
-    return {"answer": answer.strip(), "summary": summary.strip(), "key_points": key_points}
+    return {"answer": content, "summary": "", "key_points": []}
 
 
 def analyze_video(url: str, langs: str = "ru,en", user_prompt: str | None = None) -> Dict:
