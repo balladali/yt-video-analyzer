@@ -6,7 +6,7 @@
 - Принимает YouTube URL
 - Достаёт авто/обычные субтитры через `yt-dlp`
 - Чистит транскрипт от таймкодов/мусора
-- Делает summary и key points через OpenRouter
+- Генерирует готовый ответ `answer` через OpenRouter по дефолтному или пользовательскому запросу
 
 ## API
 
@@ -18,7 +18,8 @@
 ```json
 {
   "url": "https://youtube.com/shorts/VVh_1g3mpj0",
-  "lang": "ru,en"
+  "lang": "ru,en",
+  "user_prompt": "Расскажи 5 ключевых моментов"
 }
 ```
 
@@ -27,11 +28,13 @@
 {
   "url": "...",
   "status": "ok",
-  "summary": "...",
-  "key_points": ["..."],
+  "answer": "...",
   "transcript": "..."
 }
 ```
+
+- `user_prompt` опционален.
+- Если `user_prompt` пустой или похож на "проанализируй", используется дефолтный промпт анализа.
 
 ## Локальный запуск
 ```bash
@@ -63,8 +66,9 @@ docker run --rm -p 8000:8000 \
 - `YTDLP_SUB_LANGS=ru,ru-orig` — первичная языковая цепочка (сначала пробуем только RU)
 - `YTDLP_FALLBACK_LANGS_ON_EMPTY=true` — при пустом результате сделать fallback по языкам
 - `YTDLP_SUB_LANGS_FALLBACK=en,en-orig` — fallback-языки (только если RU не удалось)
+- `LLM_MODEL=openai/gpt-4o-mini` — модель OpenRouter для генерации ответа
 - `LLM_TEMPERATURE=0.35` — креативность ответа LLM (выше = более вариативно, но меньше строгости)
-- `YTDLP_DEBUG=true` — добавлять debug-поле с хвостом ошибки yt-dlp в ответ API
+- `YTDLP_DEBUG=true` — добавлять расширенную диагностику yt-dlp в ответ API
 - `YTDLP_KEEP_TMP=false` — сохранять `/tmp/ytva-*` после анализа для ручной диагностики файлов
 - `ANALYZE_CACHE_TTL_SEC=900` — кэш результатов по URL, чтобы не ходить в YouTube повторно
 - `LOG_LEVEL=INFO|DEBUG` — уровень логирования сервиса
