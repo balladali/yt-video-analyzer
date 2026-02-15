@@ -1,12 +1,13 @@
 # yt-video-analyzer
 
-Минимальный Python-сервис для анализа YouTube-видео по субтитрам.
+A minimal Python service that analyzes YouTube videos using subtitles.
 
-## Что умеет
-- Принимает YouTube URL
-- Достаёт авто/обычные субтитры через `yt-dlp`
-- Чистит транскрипт от таймкодов/мусора
-- Генерирует готовый ответ `answer` через OpenRouter по дефолтному или пользовательскому запросу
+## Features
+- Accepts a YouTube URL
+- Fetches auto/manual subtitles via `yt-dlp`
+- Cleans subtitle transcript (timestamps/noise removal)
+- Generates an `answer` via OpenRouter
+- Supports optional custom user instruction via `user_prompt`
 
 ## API
 
@@ -15,15 +16,17 @@
 
 ### Analyze
 `POST /analyze`
+
+Request body:
 ```json
 {
   "url": "https://youtube.com/shorts/VVh_1g3mpj0",
   "lang": "ru,en",
-  "user_prompt": "Расскажи 5 ключевых моментов"
+  "user_prompt": "Give me 5 key takeaways"
 }
 ```
 
-Ответ:
+Response (success):
 ```json
 {
   "url": "...",
@@ -33,15 +36,21 @@
 }
 ```
 
-- `user_prompt` опционален.
-- Если `user_prompt` пустой или похож на "проанализируй", используется дефолтный промпт анализа.
+Notes:
+- `user_prompt` is optional.
+- If `user_prompt` is empty or similar to "analyze", a default analysis prompt is used.
 
-## Локальный запуск
+Possible non-`ok` statuses:
+- `no_subtitles`
+- `extract_error`
+- `blocked_by_youtube`
+
+## Local Run
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-export OPENROUTER_API_KEY=... 
+export OPENROUTER_API_KEY=...
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -55,26 +64,35 @@ docker run --rm -p 8000:8000 \
   yt-video-analyzer
 ```
 
-Где хранить cookies: лучше на хосте (например `/opt/masha/cookies/youtube-cookies.txt`) и монтировать в контейнер только для чтения.
+Recommended cookies location: host filesystem (for example `/opt/masha/cookies/youtube-cookies.txt`) mounted read-only into the container.
 
-Полезные env-переменные:
-- `YTDLP_COOKIES_PATH` — путь к cookies внутри контейнера (например `/app/cookies.txt`)
-- `YTDLP_EXTRACTOR_ARGS` — опциональные extractor-args для yt-dlp (по умолчанию пусто; не форсим player_client)
-- `YTDLP_MANUAL_MODE=true` — запускать yt-dlp в режиме, максимально близком к ручной команде
-- `YTDLP_INCLUDE_REGULAR_SUBS=false` — не дёргать обычные сабы в первой попытке (меньше запросов к YouTube)
-- `YTDLP_FALLBACK_REGULAR_ON_EMPTY=true` — если авто-сабы пустые, сделать fallback-попытку с обычными сабами
-- `YTDLP_SUB_LANGS=ru,ru-orig` — первичная языковая цепочка (сначала пробуем только RU)
-- `YTDLP_FALLBACK_LANGS_ON_EMPTY=true` — при пустом результате сделать fallback по языкам
-- `YTDLP_SUB_LANGS_FALLBACK=en,en-orig` — fallback-языки (только если RU не удалось)
-- `LLM_MODEL=openai/gpt-4o-mini` — модель OpenRouter для генерации ответа
-- `LLM_TEMPERATURE=0.35` — креативность ответа LLM (выше = более вариативно, но меньше строгости)
-- `YTDLP_DEBUG=true` — добавлять расширенную диагностику yt-dlp в ответ API
-- `YTDLP_KEEP_TMP=false` — сохранять `/tmp/ytva-*` после анализа для ручной диагностики файлов
-- `ANALYZE_CACHE_TTL_SEC=900` — кэш результатов по URL, чтобы не ходить в YouTube повторно
-- `LOG_LEVEL=INFO|DEBUG` — уровень логирования сервиса
+## Environment Variables
 
-Примечание: сервис копирует cookies во временный writable файл перед запуском `yt-dlp`, поэтому безопасный read-only mount (`:ro`) поддерживается.
+### LLM
+- `OPENROUTER_API_KEY` — OpenRouter API key
+- `LLM_MODEL=openai/gpt-4o-mini` — OpenRouter model
+- `LLM_TEMPERATURE=0.35` — response creativity (higher = more variation, less strictness)
 
-## Ограничения MVP
-- Whisper fallback пока не реализован (сделан интерфейс и статус `no_subtitles`)
-- Нет очереди задач и rate limit
+### Subtitle extraction (yt-dlp)
+- `YTDLP_COOKIES_PATH=/app/cookies.txt` — path to cookies file inside container
+- `YTDLP_EXTRACTOR_ARGS=` — optional extractor args for `yt-dlp`
+- `YTDLP_MANUAL_MODE=true` — run `yt-dlp` in manual-like mode
+- `YTDLP_INCLUDE_REGULAR_SUBS=false` — do not request regular subtitles on first attempt
+- `YTDLP_FALLBACK_REGULAR_ON_EMPTY=true` — fallback to regular subtitles if auto-subs are empty
+- `YTDLP_SUB_LANGS=ru,ru-orig` — primary subtitle language chain
+- `YTDLP_FALLBACK_LANGS_ON_EMPTY=true` — try fallback languages when primary returns empty
+- `YTDLP_SUB_LANGS_FALLBACK=en,en-orig` — fallback language chain
+- `YTDLP_KEEP_TMP=false` — keep `/tmp/ytva-*` folders for debugging
+- `YTDLP_DEBUG=false` — include extended yt-dlp diagnostics in API output
+
+### Runtime
+- `ANALYZE_CACHE_TTL_SEC=900` — in-memory cache TTL for repeated URL requests
+- `LOG_LEVEL=INFO|DEBUG` — service log verbosity
+
+## Notes
+- The service copies cookies into a temporary writable file before running `yt-dlp`, so read-only cookies mount (`:ro`) is supported.
+- YouTube behavior can be non-deterministic (IP/region/time/challenges), so occasional subtitle extraction failures are expected.
+
+## MVP Limitations
+- Whisper fallback is not implemented yet
+- No job queue / no explicit rate limiting
