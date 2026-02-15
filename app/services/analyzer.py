@@ -287,6 +287,7 @@ def _summarize_with_llm(text: str, user_prompt: str | None = None) -> Dict:
             "Верни строго JSON с полями: "
             "answer (готовый ответ для пользователя с аккуратной структурой и уместными эмодзи), "
             "summary (краткое резюме), key_points (массив строк, 5-8 пунктов). "
+            "В key_points пиши пункты без нумерации и без маркеров списка. "
             "Не предлагай пользователю дополнительные действия в конце ответа."
         )
     else:
@@ -295,6 +296,7 @@ def _summarize_with_llm(text: str, user_prompt: str | None = None) -> Dict:
             "Верни строго JSON с полями: "
             "answer (готовый ответ для пользователя с аккуратной структурой и уместными эмодзи), "
             "summary (краткое резюме), key_points (массив строк, 3-8 пунктов). "
+            "В key_points пиши пункты без нумерации и без маркеров списка. "
             "Не предлагай пользователю дополнительные действия в конце ответа."
         )
 
@@ -334,7 +336,16 @@ def _summarize_with_llm(text: str, user_prompt: str | None = None) -> Dict:
         key_points = [key_points]
     if not isinstance(key_points, list):
         key_points = []
-    key_points = [str(x).strip() for x in key_points if str(x).strip()]
+
+    cleaned_points = []
+    for x in key_points:
+        p = str(x).strip()
+        if not p:
+            continue
+        p = re.sub(r"^(?:\d+[\)\].:-]?|[-•*])\s*", "", p).strip()
+        if p:
+            cleaned_points.append(p)
+    key_points = cleaned_points
 
     answer = parsed.get("answer") if isinstance(parsed, dict) else ""
     if not isinstance(answer, str):
