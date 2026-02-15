@@ -283,11 +283,20 @@ def _summarize_with_llm(text: str, user_prompt: str | None = None) -> Dict:
 
     if is_default_analyze:
         prompt = (
-            "Сделай краткий разбор видео по транскрипту. "
-            "Верни JSON с полями summary (строка) и key_points (массив строк, 5-8 пунктов)."
+            "Сделай красивый и понятный разбор видео по транскрипту. "
+            "Верни строго JSON с полями: "
+            "answer (готовый ответ для пользователя с аккуратной структурой и уместными эмодзи), "
+            "summary (краткое резюме), key_points (массив строк, 5-8 пунктов). "
+            "Не предлагай пользователю дополнительные действия в конце ответа."
         )
     else:
-        prompt = normalized_prompt
+        prompt = (
+            f"{normalized_prompt}\n\n"
+            "Верни строго JSON с полями: "
+            "answer (готовый ответ для пользователя с аккуратной структурой и уместными эмодзи), "
+            "summary (краткое резюме), key_points (массив строк, 3-8 пунктов). "
+            "Не предлагай пользователю дополнительные действия в конце ответа."
+        )
 
     resp = requests.post(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -314,8 +323,31 @@ def _summarize_with_llm(text: str, user_prompt: str | None = None) -> Dict:
     try:
         parsed = json.loads(content)
     except Exception:
-        parsed = {"summary": content, "key_points": []}
-    return parsed
+        parsed = {"answer": content, "summary": content, "key_points": []}
+
+    summary = parsed.get("summary") if isinstance(parsed, dict) else ""
+    if not isinstance(summary, str):
+        summary = str(summary or "")
+
+    key_points = parsed.get("key_points") if isinstance(parsed, dict) else []
+    if isinstance(key_points, str):
+        key_points = [key_points]
+    if not isinstance(key_points, list):
+        key_points = []
+    key_points = [str(x).strip() for x in key_points if str(x).strip()]
+
+    answer = parsed.get("answer") if isinstance(parsed, dict) else ""
+    if not isinstance(answer, str):
+        answer = str(answer or "")
+    if not answer.strip():
+        parts = []
+        if summary.strip():
+            parts.append("🎬 Коротко по видео:\n" + summary.strip())
+        if key_points:
+            parts.append("📌 Ключевые пункты:\n" + "\n".join(f"• {p}" for p in key_points))
+        answer = "\n\n".join(parts).strip()
+
+    return {"answer": answer.strip(), "summary": summary.strip(), "key_points": key_points}
 
 
 def analyze_video(url: str, langs: str = "ru,en", user_prompt: str | None = None) -> Dict:
@@ -461,6 +493,7 @@ def analyze_video(url: str, langs: str = "ru,en", user_prompt: str | None = None
         out = {
             "url": url,
             "status": "ok",
+            "answer": llm.get("answer", ""),
             "summary": llm.get("summary", ""),
             "key_points": llm.get("key_points", []),
             "transcript": transcript,
