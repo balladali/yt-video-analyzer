@@ -275,8 +275,6 @@ def _summarize_with_llm(text: str, user_prompt: str | None = None) -> Dict:
     if not api_key:
         return {
             "answer": "OPENROUTER_API_KEY не задан — возвращаю только транскрипт.",
-            "summary": "",
-            "key_points": [],
         }
 
     normalized_prompt = (user_prompt or "").strip()
@@ -313,7 +311,7 @@ def _summarize_with_llm(text: str, user_prompt: str | None = None) -> Dict:
     resp.raise_for_status()
     content = (resp.json()["choices"][0]["message"].get("content") or "").strip()
 
-    return {"answer": content, "summary": "", "key_points": []}
+    return {"answer": content}
 
 
 def analyze_video(url: str, langs: str = "ru,en", user_prompt: str | None = None) -> Dict:
@@ -359,8 +357,7 @@ def analyze_video(url: str, langs: str = "ru,en", user_prompt: str | None = None
             out = {
                 "url": url,
                 "status": status,
-                "summary": "Не удалось получить субтитры с YouTube.",
-                "key_points": [],
+                "answer": "Не удалось получить субтитры с YouTube.",
                 "transcript": "",
             }
             if debug_mode:
@@ -435,8 +432,7 @@ def analyze_video(url: str, langs: str = "ru,en", user_prompt: str | None = None
             out = {
                 "url": url,
                 "status": "no_subtitles",
-                "summary": "Субтитры не найдены. Нужен fallback через Whisper (ещё не реализован).",
-                "key_points": [],
+                "answer": "Субтитры не найдены. Нужен fallback через Whisper (ещё не реализован).",
                 "transcript": "",
             }
             if debug_mode:
@@ -460,8 +456,6 @@ def analyze_video(url: str, langs: str = "ru,en", user_prompt: str | None = None
             "url": url,
             "status": "ok",
             "answer": llm.get("answer", ""),
-            "summary": llm.get("summary", ""),
-            "key_points": llm.get("key_points", []),
             "transcript": transcript,
         }
         if debug_mode:
